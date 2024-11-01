@@ -23,9 +23,6 @@ router.get('/', subjectController.getAllSubjects);
 // Get subject by ID
 router.get('/:id', subjectController.getSubjectById);
 
-// Get subject by Semester
-router.get('/GetSubjectsInSemester/:semester', subjectController.getAllSubjectsInSemester);
-
 // Create a new subject
 router.post('/', subjectController.createSubject);
 

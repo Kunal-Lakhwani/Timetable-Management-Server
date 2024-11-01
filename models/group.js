@@ -1,24 +1,26 @@
 const mongoose = require('mongoose');
 
-const groupSchema = new mongoose.Schema({
-  groupName: {
-    type: String,
-    required: true
-  },
-  department: {
+const GroupLabSchema = new mongoose.Schema({
+  Subject: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Department',
-    required: true
-  },
-  semester: {
-    type: Number,
-    required: true
-  },
-  Subjects: {
-    type: [mongoose.Schema.Types.ObjectId],
     ref: 'Subject',
     required: true
+  },
+  Professor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Professor',
+    required: true
   }
+}, {_id: false})
+
+const groupSchema = new mongoose.Schema({
+  Name: {type: String,required: true},
+  Timetable: {type: mongoose.Schema.Types.ObjectId, ref: "Timetable", required: true},
+  Labs: {
+    type: [GroupLabSchema],
+    required: true
+  }  
 });
 
-module.exports = mongoose.model('Group', groupSchema);
+const Group = mongoose.model('Group', groupSchema);
+module.exports = Group

@@ -1,6 +1,7 @@
 const TimetableInfo = require('../models/timetableInfoModel');
-const Timetable = require('../models/TimetableModel');
+const Timetable = require('../models/Timetable');
 const Group = require('../models/group');
+const Subject = require("../models/subjectModel");
 const OccupiedSlots = require('../models/OccupiedSlots');
 
 const formatSlotInfo = ( slotInfo ) => {
@@ -23,6 +24,16 @@ const removeRedundantSlots = (infoArr, day) => {
       prevType = info.type
       return formatSlotInfo(info)
     }).filter(info => info !== null);
+}
+
+const GetSubjectsInTimetable = async (timetable) => {
+  const flattenedSubjects = timetable.Subjects.flat()
+  const records = await Subject.find({ _id: { $in: flattenedSubjects } }).populate("theory_professors practical_professors")
+  const recordDict = {}
+  for (let i = 0; i < records.length; i++) {
+    recordDict[records[i]._id] = records[i]
+  }
+  return timetable.Subjects.map( subjGrp => subjGrp.map( subID => recordDict[subID] ) )
 }
 
 // Get detailed info for a timetable
@@ -56,9 +67,9 @@ exports.getDetailedTimetableInfo = async (req,res) => {
 
 // Create a new Timetable
 exports.createTimetable = async (req,res) => {
-  const { deptID, semester, subjects } = req.body;
+  const { AcademicYearID, semester, subjects } = req.body;
   try{    
-    const newTimetable = new Timetable({ deptID: deptID, Semester: semester, Subjects: subjects  })
+    const newTimetable = new Timetable({ AcademicYear: AcademicYearID, Semester: semester, Subjects: subjects })
     const savedTimetable = await newTimetable.save();
     try{
         // If new timetable created, initialise it's info.
@@ -68,10 +79,10 @@ exports.createTimetable = async (req,res) => {
           // 10 periods
           for(let j=1; j <= 10; j++){
             TimetableDetails.push(new TimetableInfo( {
-              timetableID: savedTimetable._id,
-              day: i,
-              slotNo: j,
-              type: 0,
+              Timetable: savedTimetable._id,
+              Day: i,
+              SlotNo: j,
+              Type: 0,
             } ));
           }
         }
@@ -90,25 +101,42 @@ exports.createTimetable = async (req,res) => {
   }
 }
 
-// Get all timetable entries
-exports.getAllTimetables = async (req, res) => {
+// Get timetable entry by ID
+exports.getTimetableById = async (req, res) => {
   try {
-    const timetables = await Timetable.find().populate('deptID').populate('Subjects');
-    res.status(200).json(timetables);
+    const timetable = await Timetable.findById(req.params.id);
+    if (!timetable) {
+      return res.status(404).json({ message: 'Timetable not found' });
+    }
+    res.status(200).json({
+      _id: timetable._id,
+      AcademicYear: timetable.AcademicYear,
+      Semester: timetable.Semester,
+      Subjects: await GetSubjectsInTimetable(timetable)
+    });
   } catch (err) {
-    console.log(err.message);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Get timetable entry by ID
-exports.getTimetableById = async (req, res) => {
+// Get timetable entry by AcademicYear ID params = YearID
+exports.getTimetablesByYearId = async (req, res) => {
   try {
-    const timetable = await Timetable.findById(req.params.id).populate('Subjects');
-    if (!timetable) {
-      return res.status(404).json({ message: 'Timetable not found' });
+    const timetablesStruct = await Timetable.find({ AcademicYear: req.params.YearID });
+    if (!timetablesStruct) {
+      return res.status(404).json({ message: 'Timetables for specified year not found' });
     }
-    res.status(200).json(timetable);
+    const timetables = Promise.all(
+      timetablesStruct.map( async (timetable) => {        
+        return {
+          _id: timetable._id,
+          AcademicYear: timetable.AcademicYear,
+          Semester: timetable.Semester,
+          Subjects: await GetSubjectsInTimetable(timetable)
+        }
+      } )
+    )
+    res.status(200).json(await timetables);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

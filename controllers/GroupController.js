@@ -1,9 +1,8 @@
 const Group = require('../models/group');
 
 exports.createGroup = async (req, res) => {
-  try {
+  try {    
     const group = new Group(req.body);
-    console.log(group);    
     await group.save();
     res.status(200).json(group);
   } catch (err) {

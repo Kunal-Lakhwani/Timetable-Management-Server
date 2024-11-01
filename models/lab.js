@@ -1,28 +1,26 @@
 const mongoose = require('mongoose');
 
 const labSchema = new mongoose.Schema({
-  labName: {
+  Name: {
     type: String,
     required: true
   },
-  labCode: {
+  Code: {
     type: String,
     required: true,
     unique: true
   },
-  department: {
+  Department: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Department',
     required: true
   },
-  capacity: {
-    type: Number,
-    required: true
-  },
-  resources: {
-    type: [String],
+  Subjects: {
+    type: [mongoose.Schema.Types.ObjectId],
+    ref: "Subject",
     required: true
   }
 }, { timestamps: true });
 
-module.exports = mongoose.model('Lab', labSchema);
+const Lab = mongoose.model('Lab', labSchema);
+module.exports = Lab

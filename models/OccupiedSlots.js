@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 
-const OccupiedSlots = new mongoose.Schema({
+const OccupiedSlotsSchema = new mongoose.Schema({
 	Day: {
         type: Number,
         required: true
@@ -8,11 +8,12 @@ const OccupiedSlots = new mongoose.Schema({
 	SlotNo: {
         type: Number,
         requred: true
-    },						
+    },
 	AssignedProfs: {
-        type: [Boolean],
-        required: true
+        type: [mongoose.Schema.Types.Mixed],
+        ref: 'TimetableInfo'
     }
 })
 
-module.exports = mongoose.model("OccupiedSlots", OccupiedSlots)
+const OccupiedSlots = mongoose.model("OccupiedSlots", OccupiedSlotsSchema)
+module.exports = OccupiedSlots

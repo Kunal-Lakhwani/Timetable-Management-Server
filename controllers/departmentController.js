@@ -1,19 +1,20 @@
-// const Department = require('../models/Department');
 const Department = require('../models/department');
 
 exports.createDepartment = async (req, res) => {
   try {
-    const department = new Department(req.body);
-    await department.save();
-    res.status(201).json(department);
+    const {name, branch} = req.body
+    const newDepartment = new Department({Name: name, Branch: branch});
+    await newDepartment.save();
+    res.status(200).json(newDepartment);
   } catch (err) {
+    console.log(err)
     res.status(500).json({ message: err.message });
   }
 };
 
 exports.getAllDepartments = async (req, res) => {
   try {
-    const departments = await Department.find();
+    const departments = await Department.find({});
     res.status(200).json(departments);
   } catch (err) {
     res.status(500).json({ message: err.message });
