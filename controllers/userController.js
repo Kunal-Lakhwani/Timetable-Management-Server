@@ -57,7 +57,7 @@ const loginUser = async (req, res) => {
         // Log the token to verify it is generated
         console.log('Generated Token:', token);
 
-        res.status(200).json({ message: 'Login successful', token, user: { name: user.name, role: user.role } });
+        res.status(200).json({ message: 'Login successful', token, timer: 3600, user: { name: user.name, role: user.role } });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error });
     }

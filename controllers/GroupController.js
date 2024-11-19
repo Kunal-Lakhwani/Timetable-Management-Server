@@ -12,9 +12,16 @@ exports.createGroup = async (req, res) => {
 
 exports.getAllGroups = async (req, res) => {
   try {
-    const groups = await Group.find()
-                  .populate("department", "name")
-                  .populate("Subjects", "Abbreviation");
+    const groups = await Group.find().populate("Labs.Subject").populate("Labs.Professor").populate("Labs.Lab")
+    res.status(200).json(groups);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getGroupsInTimetable = async (req, res) => {
+  try {
+    const groups = await Group.find({ Timetable: req.params.TimetableID }).populate("Labs.Subject").populate("Labs.Professor").populate("Labs.Lab")
     res.status(200).json(groups);
   } catch (err) {
     res.status(500).json({ message: err.message });

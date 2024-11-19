@@ -3,6 +3,7 @@ const router = express.Router();
 const labController = require('../controllers/labController');
 
 router.post('/', labController.createLab);
+router.post('/LabsWithSubjects', labController.getLabsWithSubjects);
 router.get('/', labController.getAllLabs);
 router.get('/:id', labController.getLabById);
 router.put('/:id', labController.updateLab);

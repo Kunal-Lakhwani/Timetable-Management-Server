@@ -15,6 +15,14 @@ const labSchema = new mongoose.Schema({
     ref: 'Department',
     required: true
   },
+  LabIndex: {
+    type: Number,
+    required: true
+  },
+  MaxGroups: {
+    type: Number,
+    required: true
+  },
   Subjects: {
     type: [mongoose.Schema.Types.ObjectId],
     ref: "Subject",

@@ -1,11 +1,6 @@
 const mongoose = require('mongoose');
 
 const labScheduleSchema = new mongoose.Schema({
-  Lab: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Lab',
-    required: true
-  },
   Day: {
     type: Number,
     required: true
@@ -14,6 +9,9 @@ const labScheduleSchema = new mongoose.Schema({
     type: Number,
     requred: true
   },
+  ScheduledLabs: {
+    type: [[ {type: mongoose.Schema.Types.Mixed, ref: "Timetable"} ]]
+  }
 }, { timestamps: true });
 
 const LabSchedule = mongoose.model('LabSchedule', labScheduleSchema);

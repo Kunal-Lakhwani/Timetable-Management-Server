@@ -10,6 +10,10 @@ const GroupLabSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Professor',
     required: true
+  },
+  Lab:{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Lab',
   }
 }, {_id: false})
 

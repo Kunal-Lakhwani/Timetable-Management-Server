@@ -11,7 +11,7 @@ const OccupiedSlotsSchema = new mongoose.Schema({
     },
 	AssignedProfs: {
         type: [mongoose.Schema.Types.Mixed],
-        ref: 'TimetableInfo'
+        ref: 'Timetable'
     }
 })
 

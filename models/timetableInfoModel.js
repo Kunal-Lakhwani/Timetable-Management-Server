@@ -12,7 +12,7 @@ const timetableSchema = new mongoose.Schema({
   },  // 0 = theory, 1 = lab
   Group: {
     type: [mongoose.Schema.Types.ObjectId],
-    ref: 'Group'
+    ref: 'Group'    
   },
 });
 

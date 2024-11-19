@@ -7,23 +7,24 @@ const OccupiedSlots = require('../models/OccupiedSlots');
 const formatSlotInfo = ( slotInfo ) => {
   return {
     "ID": slotInfo._id,
-    "Slot": slotInfo.slotNo,
-    "Type": slotInfo.type,
-    "Subjects": slotInfo.subjects,
-    "Groups": slotInfo.groupId
+    "Slot": slotInfo.SlotNo,
+    "Type": slotInfo.Type,
+    "Subjects": slotInfo.Subjects,
+    "Groups": slotInfo.Group
   }
 }
 
-const removeRedundantSlots = (infoArr, day) => {
-  let prevType = 0
-  return infoArr.filter( (info) => { return info.day === day } ).map((info) => {
-      if( prevType === 1 ){
-        prevType = 0
-        return null;
-      }
-      prevType = info.type
-      return formatSlotInfo(info)
-    }).filter(info => info !== null);
+const foarmatAndRemoveRedundantSlots = (infoArr, day) => {
+  let prevType = -1
+  const retArr = infoArr.filter( (info) => { return info.Day === day } ).map((info) => {
+    if( prevType === 1 ){
+      prevType = -1
+      return null;
+    }
+    prevType = info.Type
+    return formatSlotInfo(info)
+  }).filter(info => info !== null);
+  return retArr
 }
 
 const GetSubjectsInTimetable = async (timetable) => {
@@ -40,27 +41,86 @@ const GetSubjectsInTimetable = async (timetable) => {
 exports.getDetailedTimetableInfo = async (req,res) => {
   try{
     const TimetableID = req.params.id;
-    const Table = await Timetable.findById(TimetableID).populate("Subjects");
-    const Groups = await Group.find( { department: Table.deptID, semester: Table.Semester } );
-    const TimetableDetails = await TimetableInfo.find({ timetableID: TimetableID }).populate("subjects", "Abbreviation").populate("groupId", "groupName");
-    const OccupiedSlotInfo = await OccupiedSlots.find();
+    const Table = await Timetable.findById(TimetableID);
+    const Groups = await Group.find( { Timetable: TimetableID } ).populate("Labs.Subject").populate("Labs.Professor").populate("Labs.Lab");
+    const TimetableDetails = await TimetableInfo.find({ Timetable: TimetableID }).populate("Subjects", "_id Abbreviation").populate("Group", "_id Name");
+    const OccupiedSlotInfo = await OccupiedSlots.find()
     formattedSlotInfo = {
-      "Monday": removeRedundantSlots(TimetableDetails, 1),
-      "Tuesday": removeRedundantSlots(TimetableDetails, 2),
-      "Wednesday": removeRedundantSlots(TimetableDetails, 3),
-      "Thursday": removeRedundantSlots(TimetableDetails, 4),
-      "Friday": removeRedundantSlots(TimetableDetails, 5),
-      "Saturday": removeRedundantSlots(TimetableDetails, 6)
+      "Monday": foarmatAndRemoveRedundantSlots(TimetableDetails, 1),
+      "Tuesday": foarmatAndRemoveRedundantSlots(TimetableDetails, 2),
+      "Wednesday": foarmatAndRemoveRedundantSlots(TimetableDetails, 3),
+      "Thursday": foarmatAndRemoveRedundantSlots(TimetableDetails, 4),
+      "Friday": foarmatAndRemoveRedundantSlots(TimetableDetails, 5),
+      "Saturday": foarmatAndRemoveRedundantSlots(TimetableDetails, 6)
     }
+    const subjects = await GetSubjectsInTimetable(Table)
+    const LecturesInfo = subjects.map( subjgrp => {      
+      return {
+        IDs: subjgrp.map( subj => subj._id ),
+        Name: subjgrp.map( subj => subj.Abbreviation ).join("/"),
+        TotalLectures: subjgrp[0].credit_hours,
+        LecturesLeft: subjgrp[0].credit_hours,
+      }
+    })
+    const GroupsInfo = Groups.map( grp => {  
+      const data = grp._doc
+      return { ...data, Labs: data.Labs.map( lab => {return { ...lab._doc, Assigned: false }} ) }
+    })
+    // With the initial blank values set, we now need to map a dictionary for LecturesInfo. 
+    // where key is ID and value is the object record.
+    const LecturesDict = {}
+    LecturesInfo.forEach( (lecture, lectureIdx) => {
+      lecture.IDs.forEach( subjID => {
+        LecturesDict[subjID] = lectureIdx
+      })
+    })
+    // Because we are storing reference to lecture rather than a copy, when one grouped subject is 
+    // edited, the other is too.
+
+    const GroupsDict = {}
+    GroupsInfo.forEach( ( grp, grpIdx ) => GroupsDict[grp._id] = grpIdx )
+
+    // Now, we loop through all TimetableInfo records and modify the GroupsInfo and LecturesInfo data
+    // Through their dicitonaries
+
+    let skipOne = false 
+    // If previous slot was lab, we need to skip the next slot
+    // This is because lab takes two slots
+    TimetableDetails.forEach( info => {
+      if (skipOne){
+        skipOne = false;
+      }
+      else{
+        info.Subjects.forEach(( subjInfo, subjIdx ) => {
+          if ( info.Type === 0 ){ // If theory Lecture
+            LecturesInfo[LecturesDict[subjInfo._id]].LecturesLeft -= 1; // Deduct a lecture count
+          }
+          else{ // If Lab
+            skipOne = true
+            const recordIdx = GroupsDict[ info.Group[subjIdx]._id ]
+            GroupsInfo[recordIdx].Labs.forEach( ( lab, labIdx ) => {
+              if ( lab.Subject._id.equals(subjInfo._id) ){
+                GroupsInfo[recordIdx].Labs[labIdx].Assigned = true
+              }
+            })
+          }
+        })
+      }
+    })
+
     const payload = {
-      Subjects: Table.Subjects,
-      Groups: Groups,
+      Subjects: subjects,
+      Lectures: LecturesInfo,
+      Groups: GroupsInfo,
+      LecturesDict: LecturesDict,
+      GroupsDict: GroupsDict,
       TimetableInfo: formattedSlotInfo,
       OccupiedSlots: OccupiedSlotInfo
     }
     res.status(200).json(payload);
   }
   catch (err){
+    console.log(err)
     res.status(500).json({ message: err.message });
   }
 }
@@ -160,17 +220,15 @@ exports.updateTimetable = async (req, res) => {
 // Update timetable slot Info
 exports.updateTimetableInfo = async (req, res) => {
   const { day, slotNo, subjects, type, groups } = req.body;
-  console.log(req.body)
   try {
-    console.log(req.params.id);
     const updatedTimetable = await TimetableInfo.findByIdAndUpdate(req.params.id, {
-      day: day,
-      slotNo: slotNo,
-      type: type,
-      subjects: subjects,
-      groupId: groups
+      Day: day,
+      SlotNo: slotNo,
+      Type: type,
+      Subjects: subjects,
+      Group: groups.filter( grpID => grpID !== "" )
     }, { new: true });    
-    console.log(updatedTimetable);
+    console.log(updatedTimetable)
     res.status(200).json(updatedTimetable);
   } catch (err) {
     res.status(500).json({ message: err.message });

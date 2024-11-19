@@ -55,13 +55,13 @@ exports.createProfessor = async (req, res) => {
       for (let i = 1; i <= 6; i++) {
         // 10 periods
         for(let j=1; j <= 10; j++){
-          OccupiedInfo.push(new OccupiedSlot({ Day: i, SlotNo: j, AssignedProfs: ["","","","","","","","","","","","","","",""]}));
+          OccupiedInfo.push(new OccupiedSlot({ Day: i, SlotNo: j, AssignedProfs: [""]}));
         }
       }
       await OccupiedSlot.insertMany(OccupiedInfo);
     }
     const newProfessor = new Professor({ FirstName: firstName, MiddleName: middleName, LastName:lastName, Department: department });
-    newProfessor.SlotIndex = OccupiedInfo[0].AssignedProfs.length
+    newProfessor.SlotIndex = OccupiedInfo[0].AssignedProfs.length - 1
     const savedProfessor = await newProfessor.save();
     // If professor created successfully, create a new entry for them in AssignedProfs Array
     await OccupiedSlot.updateMany({},{ $push: { AssignedProfs: "" } })
