@@ -1,16 +1,19 @@
-const TimetableInfo = require('../models/timetableInfoModel');
+const AcademicYear = require('../models/AcademicYear');
 const Timetable = require('../models/Timetable');
+const TimetableInfo = require('../models/timetableInfoModel');
 const Group = require('../models/group');
 const Subject = require("../models/subjectModel");
 const OccupiedSlots = require('../models/OccupiedSlots');
+const Professor = require('../models/professorModel');
+const LabSchedule = require('../models/LabSchedule');
+const Lab = require('../models/lab');
 
 const formatSlotInfo = ( slotInfo ) => {
   return {
     "ID": slotInfo._id,
     "Slot": slotInfo.SlotNo,
     "Type": slotInfo.Type,
-    "Subjects": slotInfo.Subjects,
-    "Groups": slotInfo.Group
+    "Details": slotInfo.Details
   }
 }
 
@@ -37,13 +40,32 @@ const GetSubjectsInTimetable = async (timetable) => {
   return timetable.Subjects.map( subjGrp => subjGrp.map( subID => recordDict[subID] ) )
 }
 
+// DEV ONLY. Reset Occupied Slots info in-case TimetableInfo was reset
+exports.ResetOccupiedSlots = async (req,res) => {
+  try {
+    const ProfsCount = (await Professor.find({})).length
+    const ProfsArr = Array(ProfsCount).fill("")
+    await OccupiedSlots.updateMany({}, { $set: { AssignedProfs: [...ProfsArr] }})
+    res.status(200).json({"Message": "Successful Reset"})    
+  } catch (error) {
+    res.status(500).json({"Message": "Some error occoured"})
+  }
+}
+
 // Get detailed info for a timetable
 exports.getDetailedTimetableInfo = async (req,res) => {
   try{
     const TimetableID = req.params.id;
     const Table = await Timetable.findById(TimetableID);
-    const Groups = await Group.find( { Timetable: TimetableID } ).populate("Labs.Subject").populate("Labs.Professor").populate("Labs.Lab");
-    const TimetableDetails = await TimetableInfo.find({ Timetable: TimetableID }).populate("Subjects", "_id Abbreviation").populate("Group", "_id Name");
+    const Groups = await Group.find( { Timetable: TimetableID } )
+                  .populate("Labs.Subject")
+                  .populate("Labs.Professor")
+                  .populate("Labs.Lab");
+    const TimetableDetails = await TimetableInfo.find({ Timetable: TimetableID })
+                  .populate("Details.Subject")
+                  .populate("Details.Professor")
+                  .populate("Details.Group")
+                  .populate("Details.Lab");
     const OccupiedSlotInfo = await OccupiedSlots.find()
     formattedSlotInfo = {
       "Monday": foarmatAndRemoveRedundantSlots(TimetableDetails, 1),
@@ -57,11 +79,13 @@ exports.getDetailedTimetableInfo = async (req,res) => {
     const LecturesInfo = subjects.map( subjgrp => {      
       return {
         IDs: subjgrp.map( subj => subj._id ),
-        Name: subjgrp.map( subj => subj.Abbreviation ).join("/"),
+        Names: subjgrp.map( subj => subj.Abbreviation ),
+        Professors: subjgrp.map( subj => subj.theory_professors ),
         TotalLectures: subjgrp[0].credit_hours,
         LecturesLeft: subjgrp[0].credit_hours,
       }
     })
+    
     const GroupsInfo = Groups.map( grp => {  
       const data = grp._doc
       return { ...data, Labs: data.Labs.map( lab => {return { ...lab._doc, Assigned: false }} ) }
@@ -91,16 +115,16 @@ exports.getDetailedTimetableInfo = async (req,res) => {
         skipOne = false;
       }
       else{
-        info.Subjects.forEach(( subjInfo, subjIdx ) => {
+        info.Details.forEach(( detail, detailIdx ) => {
           if ( info.Type === 0 ){ // If theory Lecture
-            LecturesInfo[LecturesDict[subjInfo._id]].LecturesLeft -= 1; // Deduct a lecture count
+            LecturesInfo[LecturesDict[detail.Subject._id]].LecturesLeft -= 1; // Deduct a lecture count
           }
           else{ // If Lab
             skipOne = true
-            const recordIdx = GroupsDict[ info.Group[subjIdx]._id ]
-            GroupsInfo[recordIdx].Labs.forEach( ( lab, labIdx ) => {
-              if ( lab.Subject._id.equals(subjInfo._id) ){
-                GroupsInfo[recordIdx].Labs[labIdx].Assigned = true
+            const groupIdx = GroupsDict[ detail.Group._id ]
+            GroupsInfo[groupIdx].Labs.forEach( ( lab, labIdx ) => {
+              if ( lab.Subject._id.equals(detail.Subject._id) ){
+                GroupsInfo[groupIdx].Labs[labIdx].Assigned = true
               }
             })
           }
@@ -108,12 +132,27 @@ exports.getDetailedTimetableInfo = async (req,res) => {
       }
     })
 
+    // Create a Dictionary of Professor slot Indexes.
+    const SlotIdxDict = {}
+    subjects.flat().forEach( subj => {
+      subj.theory_professors.forEach( prof => {
+        SlotIdxDict[prof._id] = prof.SlotIndex
+      })
+      subj.practical_professors?.forEach( prof => {
+        SlotIdxDict[prof._id] = prof.SlotIndex
+      })
+    })
+
+    // Create a Dictionary of Lab slot Indexes
+    const LabSlotIdxDict = {}
+    await Lab.find({}).then( labs => labs.forEach( lab => LabSlotIdxDict[lab._id] = lab.LabIndex ) )
+
     const payload = {
       Subjects: subjects,
       Lectures: LecturesInfo,
       Groups: GroupsInfo,
-      LecturesDict: LecturesDict,
-      GroupsDict: GroupsDict,
+      ProfessorSlotDict: SlotIdxDict,
+      LabSlotDict: LabSlotIdxDict,
       TimetableInfo: formattedSlotInfo,
       OccupiedSlots: OccupiedSlotInfo
     }
@@ -122,6 +161,17 @@ exports.getDetailedTimetableInfo = async (req,res) => {
   catch (err){
     console.log(err)
     res.status(500).json({ message: err.message });
+  }
+}
+
+exports.getAcademicYearDetails = async (req, res) => {
+  try {
+    const Timetables = await Timetable.find({})
+    const Years = await AcademicYear.find({})
+
+    
+  } catch (error) {
+    res.status(500).json({ Message: "An Error Occoured" })
   }
 }
 
@@ -142,7 +192,8 @@ exports.createTimetable = async (req,res) => {
               Timetable: savedTimetable._id,
               Day: i,
               SlotNo: j,
-              Type: 0,
+              Type: -1,  
+              Details: []            
             } ));
           }
         }
@@ -217,22 +268,108 @@ exports.updateTimetable = async (req, res) => {
   }
 };
 
-// Update timetable slot Info
+// Update timetable slot Info, 
 exports.updateTimetableInfo = async (req, res) => {
-  const { day, slotNo, subjects, type, groups } = req.body;
+  const { day, slotNo, type, Details, ProfessorSlotDict, LabSlotDict } = req.body;
+
   try {
-    const updatedTimetable = await TimetableInfo.findByIdAndUpdate(req.params.id, {
-      Day: day,
-      SlotNo: slotNo,
-      Type: type,
-      Subjects: subjects,
-      Group: groups.filter( grpID => grpID !== "" )
-    }, { new: true });    
-    console.log(updatedTimetable)
-    res.status(200).json(updatedTimetable);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    const previousTimetableInfo = await TimetableInfo.findById(req.params.id)
+                                          .populate("Details.Subject").populate("Details.Professor")
+                                          .populate("Details.Group").populate("Details.Lab")
+    try {   
+
+    // If Previous type is not Blank, we need to unset records in OccupiedSlots and LabSchedule
+      if( previousTimetableInfo.Type !== -1 ){
+        console.log(previousTimetableInfo.Type)
+        const PrevProfSlots = []
+        const PrevLabSlots = []
+        previousTimetableInfo.Details.forEach( details => {
+          PrevProfSlots.push(details.Professor.SlotIndex)
+          PrevLabSlots.push(details.Lab.LabIndex)
+        })    
+
+        const ProfUpdates = {}      
+        PrevProfSlots.forEach( SlotIdx => ProfUpdates[`AssignedProfs.${SlotIdx}`] = "" )      
+        console.log(ProfUpdates)
+        if( previousTimetableInfo.Type === 0 ){
+          await OccupiedSlots.updateOne( { Day: day, SlotNo: slotNo }, { $set: ProfUpdates } )
+        }
+        else if ( previousTimetableInfo.Type === 1 ){
+          await OccupiedSlots.updateMany( { 
+            $or: [ 
+              { Day: day, SlotNo: slotNo }, 
+              { Day: day, SlotNo: slotNo+1 } 
+            ]
+          }, { $set: ProfUpdates } )
+
+          const LabUpdates = {}
+          previousTimetableInfo.Details.forEach( detail => {
+            LabUpdates[`ScheduledLabs.${LabSlotDict[detail.Lab]}`] = previousTimetableInfo.Timetable
+          })
+          await LabSchedule.updateMany( { 
+            $or: [ 
+              { Day: day, SlotNo: slotNo }, 
+              { Day: day, SlotNo: slotNo+1 } 
+            ]
+          }, { $pull: LabUpdates } )
+        }      
+      }
+      
+      await TimetableInfo.findByIdAndUpdate(req.params.id, {
+        Day: day,
+        SlotNo: slotNo,
+        Type: type,
+        Details: Details
+      });
+
+      // If Type isn't blank, mark slot as Assigned
+      if( type !== -1 ){
+        const ProfUpdates = {}
+        console.log(Details)
+        Details.forEach( detail => {          
+          ProfUpdates[`AssignedProfs.${ProfessorSlotDict[detail.Professor]}`] = previousTimetableInfo.Timetable
+        })
+        console.log(ProfUpdates)
+        if( type === 0 ){
+          await OccupiedSlots.updateOne( { Day: day, SlotNo: slotNo }, { $set: ProfUpdates } )
+        }
+        else if ( type === 1 ){
+          await OccupiedSlots.updateMany( { 
+            $or: [ 
+              { Day: day, SlotNo: slotNo }, 
+              { Day: day, SlotNo: slotNo+1 } 
+            ]
+          }, { $set: ProfUpdates } )
+          
+          const LabUpdates = {}
+          Details.forEach( detail => {
+            LabUpdates[`ScheduledLabs.${LabSlotDict[detail.Lab]}`] = previousTimetableInfo.Timetable
+          })
+          await LabSchedule.updateOne( { 
+            $or: [ 
+              { Day: day, SlotNo: slotNo }, 
+              { Day: day, SlotNo: slotNo+1 } 
+            ]
+          }, { $push: LabUpdates } )
+        }
+      }
+
+      res.status(200).json(previousTimetableInfo);
+    } catch (err) {
+      console.log(err)
+        try {            
+          await TimetableInfo.findByIdAndUpdate(req.params.id, {
+            Day: day,
+            SlotNo: slotNo,
+            Type: previousTimetableInfo.Type,
+            Details: previousTimetableInfo.Details
+          });
+        } catch (error) {}
+      res.status(500).json({ message: err.message });
+    }
+  } catch (error) {
+    
+  }  
 };
 
 // Delete timetable entry
